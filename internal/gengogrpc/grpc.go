@@ -20,6 +20,7 @@ const (
 	grpcPackage    = protogen.GoImportPath("google.golang.org/grpc")
 	codesPackage   = protogen.GoImportPath("google.golang.org/grpc/codes")
 	statusPackage  = protogen.GoImportPath("google.golang.org/grpc/status")
+	rpcPkg         = protogen.GoImportPath("github.com/wwq-2020/go.common/rpc")
 )
 
 // GenerateFile generates a _grpc.pb.go file containing gRPC service definitions.
@@ -155,6 +156,11 @@ func genService(gen *protogen.Plugin, file *protogen.File, g *protogen.Generated
 	serviceDescVar := "_" + service.GoName + "_serviceDesc"
 	g.P("func Register", service.GoName, "Server(s *", grpcPackage.Ident("Server"), ", srv ", serverType, ") {")
 	g.P("s.RegisterService(&", serviceDescVar, `, srv)`)
+	g.P("}")
+	g.P()
+
+	g.P("func ListenAndServe", service.GoName, "(srv ", serverType, ") {")
+	g.P(rpcPkg.Ident("ListenAndServe"), "(&", serviceDescVar, `, srv)`)
 	g.P("}")
 	g.P()
 
