@@ -113,6 +113,27 @@ func genService(gen *protogen.Plugin, file *protogen.File, g *protogen.Generated
 		}
 	}
 
+	rpcClientName := service.GoName + "RPCClient"
+	// Client structure.
+	g.P("type ", unexport(rpcClientName), " struct {")
+	g.P("cc ", rpcPkg.Ident("Client"))
+	g.P("}")
+	g.P()
+
+	g.P("func New", rpcClientName, " (addr string) ", clientName, " {")
+	g.P("return &", unexport(rpcClientName), "{cc:", rpcPkg.Ident("NewClient"), "(addr)}")
+	g.P("}")
+	g.P()
+
+	methodIndex = 0
+	streamIndex = 0
+	for _, method := range service.Methods {
+		if !method.Desc.IsStreamingServer() && !method.Desc.IsStreamingClient() {
+			genRPCClientMethod(gen, file, g, method, methodIndex)
+			methodIndex++
+		}
+	}
+
 	// Server interface.
 	serverType := service.GoName + "Server"
 	g.P("// ", serverType, " is the server API for ", service.GoName, " service.")
@@ -159,8 +180,13 @@ func genService(gen *protogen.Plugin, file *protogen.File, g *protogen.Generated
 	g.P("}")
 	g.P()
 
-	g.P("func ListenAndServe", service.GoName, "(srv ", serverType, ") {")
-	g.P(rpcPkg.Ident("ListenAndServe"), "(&", serviceDescVar, `, srv)`)
+	g.P("func Register", service.GoName, "ToRPCServer(s ", rpcPkg.Ident("Server"), ", srv ", serverType, ") {")
+	g.P("s.RegisterService(&", serviceDescVar, `, srv)`)
+	g.P("}")
+	g.P()
+
+	g.P("func ListenAndServe", service.GoName, "(srv ", serverType, ", opts ...", rpcPkg.Ident("ServerOption"), ") {")
+	g.P(rpcPkg.Ident("ListenAndServe"), "(&", serviceDescVar, `, srv, opts...)`)
 	g.P("}")
 	g.P()
 
@@ -221,6 +247,25 @@ func clientSignature(g *protogen.GeneratedFile, method *protogen.Method) string 
 	}
 	s += ", error)"
 	return s
+}
+
+func genRPCClientMethod(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, method *protogen.Method, index int) {
+	service := method.Parent
+	sname := fmt.Sprintf("/%s/%s", service.Desc.FullName(), method.Desc.Name())
+
+	if method.Desc.Options().(*descriptorpb.MethodOptions).GetDeprecated() {
+		g.P(deprecationComment)
+	}
+	g.P("func (c *", unexport(service.GoName), "RPCClient) ", clientSignature(g, method), "{")
+	if !method.Desc.IsStreamingServer() && !method.Desc.IsStreamingClient() {
+		g.P("out := new(", method.Output.GoIdent, ")")
+		g.P(`err := c.cc.Invoke(ctx, "`, sname, `", in, out)`)
+		g.P("if err != nil { return nil, err }")
+		g.P("return out, nil")
+		g.P("}")
+		g.P()
+		return
+	}
 }
 
 func genClientMethod(gen *protogen.Plugin, file *protogen.File, g *protogen.GeneratedFile, method *protogen.Method, index int) {
